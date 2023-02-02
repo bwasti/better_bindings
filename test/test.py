@@ -11,10 +11,10 @@ print(m.bar(8, 5))
 import time
 
 t0 = time.time()
-for i in range(10000):
+for i in range(100000):
     _ = m.foo(4, 4)
 t1 = time.time()
-print((t1 - t0) * 1e9 / 10000, "ns per call")
+print((t1 - t0) * 1e6 / 100000, "us per call")
 
 MyObject = bb.object(
     "obj.so",

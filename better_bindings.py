@@ -7,7 +7,6 @@ import functools
 
 include_template = """#define PY_SSIZE_T_CLEAN
 #define Py_LIMITED_API 0x030B0000
-#include <dlfcn.h>
 #include <Python.h>
 #include <stdlib.h>
 
@@ -39,12 +38,11 @@ static struct PyModuleDef {module_name}_module = {{
 }};
 
 PyMODINIT_FUNC PyInit_{module_name}(void) {{
-    //dlopen("{lib_file}", RTLD_LAZY);
     return PyModule_Create(&{module_name}_module);
 }}
 """
 
-build_template = "cc {generated_file} {lib_file} -shared -o {binary_name} {includes} -Wl,-undefined,dynamic_lookup 2>/dev/null"
+build_template = "cc -O3 {generated_file} {lib_file} -shared -o {binary_name} {includes} -Wl,-undefined,dynamic_lookup 2>/dev/null"
 
 
 class Types(object):
@@ -141,7 +139,6 @@ def bind(file, binding_map):
         f.write(registration)
         f.write(init)
         f.flush()
-        # os.system(f"bat {source.name}")
         os.system(
             build_template.format(
                 generated_file=source.name,
