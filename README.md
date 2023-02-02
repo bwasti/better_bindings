@@ -4,10 +4,10 @@
 
 
 
-This project will attempt to accomplishes 2 things:
+This project will attempt to accomplish 2 things:
 
-1. Easiest to implement bindings (using a standard C ABI) - ✅
-2. Fastest bindings (using something like `compile`) - 🚧
+1. Easy to implement bindings (using a standard C ABI) - ✅
+2. Fast bindings (using something like `compile`) - 🚧
 
 ### Easy to use
 
