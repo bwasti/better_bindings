@@ -8,6 +8,13 @@ m = bb.bind("fn.so", {
 print(m.foo(5, 5))
 print(m.bar(8, 5))
 
+def f(a):
+    b = m.foo(a, 5)
+    c = m.foo(b, 5)
+    return c
+
+import dis
+print(dis.dis(f))
 import time
 
 t0 = time.time()

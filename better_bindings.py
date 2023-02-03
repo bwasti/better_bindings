@@ -4,6 +4,10 @@ import importlib.util
 import tempfile
 import sysconfig
 import functools
+import dis
+import inspect
+import graphlib
+import networkx as nx
 
 include_template = """#define PY_SSIZE_T_CLEAN
 #define Py_LIMITED_API 0x030B0000
@@ -88,10 +92,11 @@ def gen_method(symbol, real_symbol, args, out, descr):
 
 
 module_count = 0
+module_maps = {}
 
 
 def bind(file, binding_map):
-    global module_count
+    global module_count, module_maps
 
     declarations = []
     impls = []
@@ -148,7 +153,9 @@ def bind(file, binding_map):
             )
         )
         spec = importlib.util.spec_from_file_location(module_name, module_binary.name)
-        return importlib.util.module_from_spec(spec)
+        mod = importlib.util.module_from_spec(spec)
+        module_maps[mod] = binding_map
+        return mod
 
 
 def object(file, binding_map):
@@ -174,9 +181,108 @@ def object(file, binding_map):
 
     return Obj
 
+def compile(func):
+    print(dis.dis(func))
+
+    class Node:
+        count = 0
+        def __init__(self, *info):
+            self.info = info
+            Node.count += 1
+            self.id = Node.count
+        def __hash__(self):
+            return hash(self.id)
+        def __repr__(self):
+            return f'{{{self.info[0]} ({self.id})}}'
+
+    co_names = func.__code__.co_names
+    stack = []
+    slots = {}
+    graph = {}
+    # populate args
+    sig = inspect.signature(func)
+    for i in range(len(sig.parameters)):
+        slots[i] = Node('arg', i)
+    # create graph
+    for instr in dis.Bytecode(func):
+        #print(instr)
+        if instr.opname == 'LOAD_FAST':
+            stack.append(slots[instr.arg])
+        elif instr.opname == 'LOAD_GLOBAL':
+            g = globals()[co_names[instr.arg]]
+            n = Node('global', g)
+            stack.append(n)
+        elif instr.opname == 'LOAD_METHOD':
+            tos = stack.pop()
+            method_name = co_names[instr.arg]
+            is_better_binding = False
+            if tos.info[1] in module_maps:
+                binding = module_maps[tos.info[1]]
+                if method_name in binding:
+                    is_better_binding = True
+            n = Node('method', getattr(tos.info[1], method_name), method_name + " (native)" if is_better_binding else "")
+            stack.append(n)
+        elif instr.opname == 'STORE_FAST':
+            ret = stack.pop()
+            slots[instr.arg] = ret
+        elif instr.opname == 'BINARY_OP':
+            b = stack.pop()
+            a = stack.pop()
+            n = Node('binary' + instr.argrepr)
+            graph[n] = [a, b]
+            stack.append(n)
+        elif instr.opname == 'RETURN_VALUE':
+            ret = stack[-1]
+            stack = stack[:-1]
+            n = Node('ret')
+            graph[n] = [ret]
+        elif instr.opname == 'RESUME':
+            continue
+        elif instr.opname == 'PRECALL':
+            continue
+        elif instr.opname == 'CALL':
+            vals = [stack.pop() for _ in range(instr.arg)]
+            call = stack.pop()
+            n = Node('call ' + call.info[2])
+            graph[n] = vals
+            stack.append(n)
+        else:
+            print(instr)
+            raise Exception(f'unhandled op: {instr.opname}')
+        #b = instr.opcode.to_bytes(1, byteorder='little')
+        #if instr.arg:
+        #  b += instr.arg.to_bytes(1, byteorder='little')
+        #print(instr.opname, instr.arg, '---', stack, slots)
+        print(instr.opname, instr.arg, instr.offset)
+
+    ts = graphlib.TopologicalSorter(graph)
+    for node in ts.static_order():
+        if node.info[0] == 'arg':
+            continue
+        #dis.opmap['BINARY_OP']
+        #print(node, graph[node])
+        #print(node.info)
+
+    #print(list(ts.static_order()))
+
+    #g = nx.from_dict_of_lists(graph, create_using=nx.DiGraph)
+    #nx.nx_pydot.write_dot(g, 'graph.dot')
 
 float = types.float
 int32 = types.int32
 void = types.void
 ptr = types.ptr
-__all__ = ["bind", "object", "float", "int32", "void", "ptr"]
+__all__ = ["bind", "object", "float", "int32", "void", "ptr", "compile"]
+
+m = bind("fn.so", {
+  "foo": ([int32, int32], float),
+  "bar": ([int32, float], int32)
+})
+def f(a, b, d=5, f=5):
+    c = a * b
+    e = c + a * d
+    k = m.foo(c, e)
+    m = a + c
+    k = m.foo(m.foo(a, k), m.foo(a, k))
+    return k + m
+compile(f)
